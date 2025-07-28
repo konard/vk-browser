@@ -33,7 +33,8 @@ Access the live demo at: https://konard.github.io/vk-browser/
    - Navigate to https://konard.github.io/vk-browser/
    - Click "Login with Kate Mobile"
    - Authorize the app
-   - You'll be redirected back to your GitHub Pages site with an access token
+   - Copy the entire URL from the blank page
+   - Paste it back in the app (token will be extracted automatically) and click "Connect"
 
 ## How It Works
 
@@ -41,9 +42,12 @@ Access the live demo at: https://konard.github.io/vk-browser/
 
 1. User clicks "Login with Kate Mobile"
 2. Redirects to VK OAuth page with Kate Mobile app ID
-3. After authorization, VK redirects back to your GitHub Pages URL with access token in hash
-4. The app extracts the token and stores it in memory
-5. User clicks "Connect to VK" to start the bot
+3. After authorization, VK redirects to blank.html with access token in URL
+4. User copies the entire URL from their browser
+5. User pastes the URL into the app (the token will be extracted automatically)
+6. User clicks "Connect to VK" to start the bot
+
+The app also saves your token in localStorage for convenience, so you don't need to re-authenticate each time.
 
 ### Technical Implementation
 

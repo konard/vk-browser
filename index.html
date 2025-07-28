@@ -358,7 +358,7 @@
         // Kate Mobile App ID
         const KATE_MOBILE_APP_ID = '2685278';
         const KATE_MOBILE_SECRET = 'lxhD8OD7dMsqtXIm5IUY';
-        const REDIRECT_URI = 'https://konard.github.io/vk-browser/';
+        const REDIRECT_URI = 'https://oauth.vk.com/blank.html';
         const SCOPE = '1073737727'; // Full Kate Mobile scope including messages, offline, etc.
         const API_VERSION = '5.131';
 
@@ -376,17 +376,13 @@
             const vkClientRef = useRef(null);
             const messagesEndRef = useRef(null);
 
-            // Check for access token in URL hash on component mount
+            // No need to check URL hash since we're using blank.html redirect
             useEffect(() => {
-                const hash = window.location.hash.substring(1);
-                const params = new URLSearchParams(hash);
-                const token = params.get('access_token');
-                
-                if (token) {
-                    setAccessToken(token);
-                    setInfo('Access token found! Click Connect to start.');
-                    // Clean URL
-                    window.history.replaceState(null, null, window.location.pathname);
+                // Check if there's a saved token in localStorage
+                const savedToken = localStorage.getItem('vk_access_token');
+                if (savedToken) {
+                    setAccessToken(savedToken);
+                    setInfo('Saved token found! Click Connect to start.');
                 }
             }, []);
 
@@ -413,6 +409,9 @@
 
                 try {
                     vkClientRef.current = new VKAPIClient(accessToken);
+                    
+                    // Save token to localStorage for convenience
+                    localStorage.setItem('vk_access_token', accessToken);
                     
                     // Get user info
                     const userInfo = await vkClientRef.current.getCurrentUser();
@@ -507,8 +506,45 @@
                             {!accessToken ? (
                                 <>
                                     <p>This bot uses Kate Mobile authentication for VK access.</p>
-                                    <p>Click the button below to login with your VK account.</p>
-                                    <button onClick={login}>Login with Kate Mobile</button>
+                                    <p><strong>How to authenticate:</strong></p>
+                                    <ol style={{textAlign: 'left', marginBottom: '15px'}}>
+                                        <li>Click "Login with Kate Mobile" below</li>
+                                        <li>Authorize the app in VK</li>
+                                        <li>You'll be redirected to a blank page</li>
+                                        <li>Copy the entire URL from your browser</li>
+                                        <li>Paste it in the field below</li>
+                                    </ol>
+                                    <button onClick={login} style={{marginBottom: '15px'}}>Login with Kate Mobile</button>
+                                    
+                                    <div style={{marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #ddd'}}>
+                                        <p>Paste the URL or access token:</p>
+                                        <input
+                                            type="text"
+                                            placeholder="Paste the entire URL or just the access token"
+                                            value={accessToken}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                // Check if it's a URL with access token
+                                                if (value.includes('#access_token=')) {
+                                                    const match = value.match(/#access_token=([^&]+)/);
+                                                    if (match && match[1]) {
+                                                        setAccessToken(match[1]);
+                                                        setInfo('Access token extracted from URL!');
+                                                    }
+                                                } else if (value.includes('access_token=')) {
+                                                    const match = value.match(/access_token=([^&]+)/);
+                                                    if (match && match[1]) {
+                                                        setAccessToken(match[1]);
+                                                        setInfo('Access token extracted from URL!');
+                                                    }
+                                                } else {
+                                                    setAccessToken(value);
+                                                }
+                                            }}
+                                            onKeyPress={(e) => e.key === 'Enter' && connect()}
+                                        />
+                                        {accessToken && <button onClick={connect} style={{marginTop: '10px'}}>Connect with Token</button>}
+                                    </div>
                                 </>
                             ) : (
                                 <>
