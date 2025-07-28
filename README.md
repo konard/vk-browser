@@ -4,7 +4,7 @@ A proof of concept VK bot that runs entirely in the browser using long polling t
 
 ## Live Demo
 
-Deploy this to GitHub Pages and access it at: `https://[your-username].github.io/[repo-name]/`
+Access the live demo at: https://konard.github.io/vk-browser/
 
 ## Features
 
@@ -20,7 +20,7 @@ Deploy this to GitHub Pages and access it at: `https://[your-username].github.io
 
 1. **Fork or Clone this Repository**
    ```bash
-   git clone https://github.com/[your-username]/vk-browser.git
+   git clone https://github.com/konard/vk-browser.git
    ```
 
 2. **Enable GitHub Pages**
@@ -30,7 +30,7 @@ Deploy this to GitHub Pages and access it at: `https://[your-username].github.io
    - Save
 
 3. **Access Your Bot**
-   - Navigate to `https://[your-username].github.io/vk-browser/`
+   - Navigate to https://konard.github.io/vk-browser/
    - Click "Login with Kate Mobile"
    - Authorize the app
    - You'll be redirected back to your GitHub Pages site with an access token
