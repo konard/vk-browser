@@ -249,17 +249,26 @@
                         const lastMessageId = this.lastMessageId || 0;
                         
                         try {
-                            const response = await this.jsonpRequest('messages.getHistory', {
+                            const params = {
                                 user_id: this.userId,
-                                count: 20,
-                                offset: 0
-                            });
+                                count: 20
+                            };
+                            
+                            // If we have a last message ID, only get messages after it
+                            if (lastMessageId > 0) {
+                                params.start_message_id = lastMessageId;
+                            }
+                            
+                            const response = await this.jsonpRequest('messages.getHistory', params);
                             
                             if (response && response.items) {
-                                const newMessages = response.items.filter(msg => msg.id > lastMessageId);
+                                // When using start_message_id, messages come in reverse order (newest first)
+                                // We need to process them in chronological order
+                                const messages = lastMessageId > 0 ? response.items.reverse() : response.items;
+                                const newMessages = messages.filter(msg => msg.id > lastMessageId);
                                 
                                 if (newMessages.length > 0) {
-                                    console.log('New messages found:', newMessages.length);
+                                    console.log(`New messages found: ${newMessages.length} (using start_message_id: ${lastMessageId})`);
                                     this.lastMessageId = Math.max(...newMessages.map(m => m.id));
                                     
                                     // Process new messages
@@ -280,9 +289,9 @@
                             onError(error);
                         }
 
-                        // Continue polling every 2 seconds
+                        // Continue polling every 1.5 seconds (slightly faster for better UX)
                         if (this.isPolling) {
-                            setTimeout(poll, 2000);
+                            setTimeout(poll, 1500);
                         }
                     } catch (error) {
                         console.error('Long poll error:', error);
