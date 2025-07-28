@@ -54,7 +54,7 @@ The app also saves your token in localStorage for convenience, so you don't need
 - **Kate Mobile App ID**: 2685278 (official Kate Mobile ID)
 - **OAuth Scope**: messages, offline
 - **API Version**: 5.131
-- **Long Polling**: Uses JSONP for cross-origin requests
+- **Polling**: Uses periodic message checking (true long polling not available in browser due to CORS)
 
 ### Security
 
@@ -87,7 +87,8 @@ Works in modern browsers:
 - JSONP only supports GET requests
 - VK API rate limits apply (3 requests/second)
 - Some VK features may not be available through JSONP
-- Long polling might occasionally disconnect (auto-reconnects)
+- True long polling is not available in browser (uses periodic polling every 2 seconds instead)
+- VK Long Poll servers don't support JSONP, limiting real-time capabilities
 
 ## License
 
