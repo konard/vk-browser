@@ -408,7 +408,7 @@
                         id: msg.id,
                         text: msg.text,
                         date: new Date(msg.date * 1000),
-                        isIncoming: msg.from_id !== userInfo.id,
+                        isIncoming: false, // All messages to self are shown as sent
                         fromId: msg.from_id
                     })).reverse();
                     setMessages(formattedHistory);
@@ -427,7 +427,7 @@
                                 id: messageData.id,
                                 text: messageData.text,
                                 date: new Date(messageData.timestamp * 1000),
-                                isIncoming: true,
+                                isIncoming: false, // All messages to self are shown as sent
                                 fromId: messageData.fromId
                             };
                             setMessages(prev => {
@@ -435,6 +435,9 @@
                                 if (prev.some(m => m.id === newMessage.id)) {
                                     return prev;
                                 }
+                                console.log('New message received:', newMessage);
+                                // Clear the "message sent" info when we receive the message
+                                setInfo('');
                                 return [...prev, newMessage];
                             });
                         },
@@ -475,16 +478,8 @@
 
                 try {
                     await vkClientRef.current.sendMessage(messageText);
-                    
-                    // Add message to local state
-                    const newMessage = {
-                        id: Date.now(),
-                        text: messageText,
-                        date: new Date(),
-                        isIncoming: false,
-                        fromId: user.id
-                    };
-                    setMessages(prev => [...prev, newMessage]);
+                    // Don't add message to local state - wait for it to come through polling
+                    setInfo('Message sent! It will appear when received.');
                 } catch (err) {
                     setError(`Failed to send message: ${err.message}`);
                     setInputText(messageText); // Restore input on error
