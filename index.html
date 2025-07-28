@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VK Browser Bot - Long Polling Demo</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #2a5885;
+            margin-bottom: 20px;
+        }
+        .auth-section {
+            background: #f0f2f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .auth-section input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .auth-section button {
+            background: #4a76a8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .auth-section button:hover {
+            background: #3d6490;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .chat-section {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            height: 400px;
+            display: flex;
+            flex-direction: column;
+        }
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background: #fafafa;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .message.sent {
+            background: #e3f2fd;
+            margin-left: 20%;
+        }
+        .message.received {
+            background: #f5f5f5;
+            margin-right: 20%;
+        }
+        .message-time {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .input-section {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            background: white;
+        }
+        .input-section input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .input-section button {
+            background: #4a76a8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .input-section button:hover {
+            background: #3d6490;
+        }
+        .input-section button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // VK API wrapper class
+        class VKAPIClient {
+            constructor(accessToken, apiVersion = '5.131') {
+                this.accessToken = accessToken;
+                this.apiVersion = apiVersion;
+                this.userId = null;
+                this.longPollServer = null;
+                this.isPolling = false;
+            }
+
+            // Helper to create JSONP request
+            jsonpRequest(method, params) {
+                return new Promise((resolve, reject) => {
+                    const callbackName = 'vkCallback' + Math.round(Math.random() * 1000000);
+                    const script = document.createElement('script');
+                    
+                    window[callbackName] = (response) => {
+                        delete window[callbackName];
+                        document.body.removeChild(script);
+                        
+                        if (response.error) {
+                            reject(response.error);
+                        } else {
+                            resolve(response.response);
+                        }
+                    };
+
+                    const url = new URL(`https://api.vk.com/method/${method}`);
+                    url.searchParams.append('access_token', this.accessToken);
+                    url.searchParams.append('v', this.apiVersion);
+                    url.searchParams.append('callback', callbackName);
+                    
+                    Object.keys(params).forEach(key => {
+                        url.searchParams.append(key, params[key]);
+                    });
+
+                    script.src = url.toString();
+                    script.onerror = () => {
+                        delete window[callbackName];
+                        document.body.removeChild(script);
+                        reject(new Error('Network error'));
+                    };
+                    
+                    document.body.appendChild(script);
+                });
+            }
+
+            // Get current user info
+            async getCurrentUser() {
+                try {
+                    const response = await this.jsonpRequest('users.get', {});
+                    if (response && response[0]) {
+                        this.userId = response[0].id;
+                        return response[0];
+                    }
+                    throw new Error('Failed to get user info');
+                } catch (error) {
+                    console.error('Error getting current user:', error);
+                    throw error;
+                }
+            }
+
+            // Get long poll server
+            async getLongPollServer() {
+                try {
+                    const response = await this.jsonpRequest('messages.getLongPollServer', {
+                        need_pts: 1,
+                        lp_version: 3
+                    });
+                    this.longPollServer = response;
+                    return response;
+                } catch (error) {
+                    console.error('Error getting long poll server:', error);
+                    throw error;
+                }
+            }
+
+            // Long polling
+            async longPoll(onMessage, onError) {
+                if (!this.longPollServer) {
+                    await this.getLongPollServer();
+                }
+
+                this.isPolling = true;
+
+                const poll = async () => {
+                    if (!this.isPolling) return;
+
+                    try {
+                        const url = `https://${this.longPollServer.server}?act=a_check&key=${this.longPollServer.key}&ts=${this.longPollServer.ts}&wait=25&mode=2&version=3`;
+                        
+                        // Using fetch with no-cors mode (we won't get the response but can try)
+                        // Since VK doesn't support CORS, we'll need to use a different approach
+                        // Let's use JSONP for long polling as well
+                        const response = await new Promise((resolve, reject) => {
+                            const callbackName = 'lpCallback' + Math.round(Math.random() * 1000000);
+                            const script = document.createElement('script');
+                            
+                            window[callbackName] = (response) => {
+                                delete window[callbackName];
+                                document.body.removeChild(script);
+                                resolve(response);
+                            };
+
+                            const pollUrl = new URL(`https://${this.longPollServer.server}`);
+                            pollUrl.searchParams.append('act', 'a_check');
+                            pollUrl.searchParams.append('key', this.longPollServer.key);
+                            pollUrl.searchParams.append('ts', this.longPollServer.ts);
+                            pollUrl.searchParams.append('wait', '25');
+                            pollUrl.searchParams.append('mode', '2');
+                            pollUrl.searchParams.append('version', '3');
+                            pollUrl.searchParams.append('callback', callbackName);
+
+                            script.src = pollUrl.toString();
+                            script.onerror = () => {
+                                delete window[callbackName];
+                                document.body.removeChild(script);
+                                reject(new Error('Long poll network error'));
+                            };
+                            
+                            document.body.appendChild(script);
+                        });
+
+                        if (response.failed) {
+                            // Need to get new server
+                            await this.getLongPollServer();
+                        } else {
+                            this.longPollServer.ts = response.ts;
+                            
+                            if (response.updates && response.updates.length > 0) {
+                                response.updates.forEach(update => {
+                                    // Process message updates
+                                    if (update[0] === 4) { // New message
+                                        const messageData = {
+                                            id: update[1],
+                                            flags: update[2],
+                                            fromId: update[3],
+                                            timestamp: update[4],
+                                            text: update[5],
+                                            attachments: update[6]
+                                        };
+                                        
+                                        // Check if it's an incoming message (not from us)
+                                        const isIncoming = !(messageData.flags & 2);
+                                        if (isIncoming && messageData.fromId === this.userId) {
+                                            onMessage(messageData);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+
+                        // Continue polling
+                        if (this.isPolling) {
+                            setTimeout(poll, 100);
+                        }
+                    } catch (error) {
+                        console.error('Long poll error:', error);
+                        onError(error);
+                        
+                        // Retry after delay
+                        if (this.isPolling) {
+                            setTimeout(poll, 5000);
+                        }
+                    }
+                };
+
+                poll();
+            }
+
+            // Stop polling
+            stopPolling() {
+                this.isPolling = false;
+            }
+
+            // Send message
+            async sendMessage(text) {
+                try {
+                    const response = await this.jsonpRequest('messages.send', {
+                        user_id: this.userId,
+                        message: text,
+                        random_id: Math.floor(Math.random() * 1000000000)
+                    });
+                    return response;
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    throw error;
+                }
+            }
+
+            // Get message history
+            async getHistory(count = 20) {
+                try {
+                    const response = await this.jsonpRequest('messages.getHistory', {
+                        user_id: this.userId,
+                        count: count
+                    });
+                    return response.items || [];
+                } catch (error) {
+                    console.error('Error getting history:', error);
+                    throw error;
+                }
+            }
+        }
+
+        // Kate Mobile App ID
+        const KATE_MOBILE_APP_ID = '2685278';
+        const KATE_MOBILE_SECRET = 'lxhD8OD7dMsqtXIm5IUY';
+        const REDIRECT_URI = window.location.origin + window.location.pathname;
+        const SCOPE = 'messages,offline';
+        const API_VERSION = '5.131';
+
+        // Main App Component
+        function App() {
+            const [accessToken, setAccessToken] = useState('');
+            const [isConnected, setIsConnected] = useState(false);
+            const [messages, setMessages] = useState([]);
+            const [inputText, setInputText] = useState('');
+            const [error, setError] = useState('');
+            const [info, setInfo] = useState('');
+            const [user, setUser] = useState(null);
+            const [isSending, setIsSending] = useState(false);
+            
+            const vkClientRef = useRef(null);
+            const messagesEndRef = useRef(null);
+
+            // Check for access token in URL hash on component mount
+            useEffect(() => {
+                const hash = window.location.hash.substring(1);
+                const params = new URLSearchParams(hash);
+                const token = params.get('access_token');
+                
+                if (token) {
+                    setAccessToken(token);
+                    setInfo('Access token found! Click Connect to start.');
+                    // Clean URL
+                    window.history.replaceState(null, null, window.location.pathname);
+                }
+            }, []);
+
+            // Scroll to bottom when new messages arrive
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            // Initiate OAuth login
+            const login = () => {
+                const authUrl = `https://oauth.vk.com/authorize?client_id=${KATE_MOBILE_APP_ID}&display=page&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${SCOPE}&response_type=token&v=${API_VERSION}`;
+                window.location.href = authUrl;
+            };
+
+            // Connect to VK
+            const connect = async () => {
+                if (!accessToken) {
+                    setError('Please login first using Kate Mobile');
+                    return;
+                }
+
+                setError('');
+                setInfo('Connecting to VK...');
+
+                try {
+                    vkClientRef.current = new VKAPIClient(accessToken);
+                    
+                    // Get user info
+                    const userInfo = await vkClientRef.current.getCurrentUser();
+                    setUser(userInfo);
+                    setInfo(`Connected as ${userInfo.first_name} ${userInfo.last_name} (ID: ${userInfo.id})`);
+                    
+                    // Load message history
+                    const history = await vkClientRef.current.getHistory();
+                    const formattedHistory = history.map(msg => ({
+                        id: msg.id,
+                        text: msg.text,
+                        date: new Date(msg.date * 1000),
+                        isIncoming: msg.from_id !== userInfo.id,
+                        fromId: msg.from_id
+                    })).reverse();
+                    setMessages(formattedHistory);
+                    
+                    // Start long polling
+                    vkClientRef.current.longPoll(
+                        (messageData) => {
+                            const newMessage = {
+                                id: messageData.id,
+                                text: messageData.text,
+                                date: new Date(messageData.timestamp * 1000),
+                                isIncoming: true,
+                                fromId: messageData.fromId
+                            };
+                            setMessages(prev => [...prev, newMessage]);
+                        },
+                        (error) => {
+                            console.error('Long poll error:', error);
+                            setError(`Long polling error: ${error.message}`);
+                        }
+                    );
+                    
+                    setIsConnected(true);
+                    setError('');
+                } catch (err) {
+                    setError(`Connection error: ${err.message || 'Unknown error'}`);
+                    setInfo('');
+                    setIsConnected(false);
+                }
+            };
+
+            // Disconnect
+            const disconnect = () => {
+                if (vkClientRef.current) {
+                    vkClientRef.current.stopPolling();
+                    vkClientRef.current = null;
+                }
+                setIsConnected(false);
+                setUser(null);
+                setMessages([]);
+                setInfo('');
+            };
+
+            // Send message
+            const sendMessage = async () => {
+                if (!inputText.trim() || !vkClientRef.current || isSending) return;
+
+                setIsSending(true);
+                const messageText = inputText;
+                setInputText('');
+
+                try {
+                    await vkClientRef.current.sendMessage(messageText);
+                    
+                    // Add message to local state
+                    const newMessage = {
+                        id: Date.now(),
+                        text: messageText,
+                        date: new Date(),
+                        isIncoming: false,
+                        fromId: user.id
+                    };
+                    setMessages(prev => [...prev, newMessage]);
+                } catch (err) {
+                    setError(`Failed to send message: ${err.message}`);
+                    setInputText(messageText); // Restore input on error
+                } finally {
+                    setIsSending(false);
+                }
+            };
+
+            return (
+                <div className="container">
+                    <h1>VK Browser Bot - Long Polling Demo</h1>
+                    
+                    {!isConnected ? (
+                        <div className="auth-section">
+                            <h2>Authentication</h2>
+                            {!accessToken ? (
+                                <>
+                                    <p>This bot uses Kate Mobile authentication for VK access.</p>
+                                    <p>Click the button below to login with your VK account.</p>
+                                    <button onClick={login}>Login with Kate Mobile</button>
+                                </>
+                            ) : (
+                                <>
+                                    <p>Access token detected! Click Connect to start chatting.</p>
+                                    <div style={{marginBottom: '10px'}}>
+                                        <small>Token: {accessToken.substring(0, 20)}...</small>
+                                    </div>
+                                    <button onClick={connect}>Connect to VK</button>
+                                    <button onClick={() => { setAccessToken(''); setInfo(''); }} style={{marginLeft: '10px', background: '#666'}}>Clear Token</button>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <div>
+                            <div className="status connected">
+                                Connected as {user.first_name} {user.last_name}
+                                <button onClick={disconnect} style={{ float: 'right' }}>Disconnect</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {error && <div className="error">{error}</div>}
+                    {info && <div className="info">{info}</div>}
+
+                    {isConnected && (
+                        <div className="chat-section">
+                            <div className="messages">
+                                {messages.map((msg) => (
+                                    <div key={msg.id} className={`message ${msg.isIncoming ? 'received' : 'sent'}`}>
+                                        <div>{msg.text}</div>
+                                        <div className="message-time">
+                                            {msg.date.toLocaleTimeString()}
+                                        </div>
+                                    </div>
+                                ))}
+                                <div ref={messagesEndRef} />
+                            </div>
+                            <div className="input-section">
+                                <input
+                                    type="text"
+                                    placeholder="Type a message to yourself..."
+                                    value={inputText}
+                                    onChange={(e) => setInputText(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                                    disabled={isSending}
+                                />
+                                <button onClick={sendMessage} disabled={isSending || !inputText.trim()}>
+                                    {isSending ? 'Sending...' : 'Send'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // Render the app
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
